@@ -164,8 +164,81 @@ def test_play_screen_headless_smoke(monkeypatch, tmp_path):
 def test_window_size_and_scroll_are_validated():
     from drumgame.config import Config, default_dict
 
-    for patch in ({"width": 800}, {"height": 480}, {"scroll_seconds": 0}):
+    for patch in ({"width": 500}, {"height": 300}, {"scroll_seconds": 0}, {"ui_scale": 3.0}):
         data = default_dict()
         data["video"].update(patch)
         with pytest.raises(ValueError):
             Config.from_dict(data)
+
+
+def test_fit_scale():
+    from drumgame.game.ui import fit_scale
+
+    assert fit_scale(1280, 720) == pytest.approx(1.0)
+    assert fit_scale(1920, 1080) == pytest.approx(1.5)
+    assert fit_scale(2560, 1080) == pytest.approx(1.5)  # limited by height
+    assert fit_scale(640, 360) == pytest.approx(0.5)
+    # A ui_scale above 1 enlarges only until the layout runs out of room.
+    assert fit_scale(1280, 720, 1.1) == pytest.approx(1.1)
+    assert fit_scale(1280, 720, 2.0) == pytest.approx(720 / 640)
+    assert fit_scale(1280, 720, 0.5) == pytest.approx(0.5)
+
+
+def _headless_play(monkeypatch, tmp_path, overrides=None, size=None):
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    monkeypatch.setenv("SDL_AUDIODRIVER", "dummy")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    import queue
+
+    import pygame
+
+    from drumgame.game.screens.play import PlayScreen
+    from drumgame.input.keyboard_in import KeyboardInput, keymap_from_names
+
+    cfg = load_config(overrides=overrides)
+    pygame.init()
+    screen = pygame.display.set_mode(size or (cfg.width, cfg.height))
+    hits = queue.Queue()
+    keyboard = KeyboardInput(hits, keymap_from_names(cfg.keyboard))
+    return PlayScreen(screen, rock_beat(bars=8, bpm=600), cfg, hits, keyboard, "test"), pygame
+
+
+def test_song_fails_when_gauge_empties(monkeypatch, tmp_path):
+    play, pygame = _headless_play(monkeypatch, tmp_path)
+    try:
+        play.run(max_seconds=1.2)  # nobody plays: every note is missed
+        assert play.failed and play.finished and play.clock.paused
+        assert play.judge.gauge.empty
+        assert play.judge.stats.miss < play.judge.stats.total  # it stopped early
+    finally:
+        pygame.quit()
+
+
+def test_no_fail_plays_to_the_end(monkeypatch, tmp_path):
+    play, pygame = _headless_play(monkeypatch, tmp_path, {"judge": {"can_fail": False}})
+    try:
+        play.run(max_seconds=1.2)
+        assert not play.failed and play.judge.gauge.empty
+    finally:
+        pygame.quit()
+
+
+@pytest.mark.parametrize("size", [(640, 360), (1024, 640), (1920, 1080), (2560, 1080), (900, 1200)])
+def test_layout_scales_and_stays_on_screen(monkeypatch, tmp_path, size):
+    play, pygame = _headless_play(monkeypatch, tmp_path, size=size)
+    try:
+        w, h = size
+        screen_rect = pygame.Rect(0, 0, w, h)
+        assert play.text.scale == pytest.approx(min(w / 1280, h / 720))
+        for rect in (play.gauge_rect, play.highway.rect, play.panel):
+            assert screen_rect.contains(rect), rect
+        assert play.gauge_rect.right <= play.highway.rect.left <= play.highway.rect.right
+        assert play.highway.rect.right <= play.panel.left
+        play.start()
+        play.draw(1.0, 0.0)  # every drawing path runs without error at this size
+        play.finished = True
+        play.draw(1.0, 0.0)
+        play.set_screen(pygame.display.set_mode((1280, 720)))  # as on a resize
+        assert play.text.scale == pytest.approx(1.0)
+    finally:
+        pygame.quit()

@@ -69,13 +69,18 @@ def grade(accuracy: float) -> str:
 class Gauge:
     """A 0..1 meter of recent form: hits fill it, misses drain it faster.
 
-    Display only for now; nothing fails the song.
+    When it reaches zero the run has failed; whether that ends the song is
+    up to the caller.
     """
 
     CHANGE = {Judgement.PERFECT: 0.02, Judgement.GOOD: 0.01, Judgement.MISS: -0.06}
 
     def __init__(self, value: float = 0.5) -> None:
         self.value = value
+
+    @property
+    def empty(self) -> bool:
+        return self.value <= 0.0
 
     def apply(self, judgement: Judgement) -> None:
         self.value = min(1.0, max(0.0, self.value + self.CHANGE.get(judgement, 0.0)))

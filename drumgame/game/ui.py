@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from importlib import resources
+
 import pygame
 
 from drumgame.game.judge import Judgement
@@ -30,14 +32,36 @@ FOOTER_BG: Color = (14, 15, 22)
 KEYCAP: Color = (30, 33, 46)
 KEYCAP_EDGE: Color = (62, 66, 88)
 
-# Type scale. The player sits behind a kit, further from the screen than a
-# desk user, so nothing informative goes below CAPTION.
+# Type scale, in design pixels (see Text for how they reach the screen). The
+# player sits behind a kit, further from the screen than a desk user, so
+# nothing informative goes below CAPTION.
 CAPTION = 20
 BODY = 24
 TITLE = 32
 VALUE = 44
 SCORE = 88
 DISPLAY = 150
+GRADE = 190
+
+# The design is drawn for this size and scaled to fit the window.
+DESIGN_W, DESIGN_H = 1280, 720
+# The layout still works when the window is this small in design pixels, which
+# is how far a ui_scale above 1 may enlarge things.
+MIN_DESIGN_W, MIN_DESIGN_H = 1024, 640
+
+FONT_FILES = {False: "BarlowSemiCondensed-SemiBold.ttf", True: "BarlowSemiCondensed-Bold.ttf"}
+BOLD_FROM = VALUE  # sizes from here up use the bold cut
+# Barlow's digits and capitals are this fraction of the nominal size taller
+# than the face the sizes were first tuned on.
+FONT_SIZE_FACTOR = 0.78
+
+
+def fit_scale(width: int, height: int, ui_scale: float = 1.0) -> float:
+    """Screen pixels per design pixel for a window of this size."""
+    fit = min(width / DESIGN_W, height / DESIGN_H)
+    largest = min(width / MIN_DESIGN_W, height / MIN_DESIGN_H)
+    return max(0.25, min(fit * ui_scale, largest))
+
 
 LANE_COLORS: dict[str, Color] = {
     "crash_l": (235, 90, 165),
@@ -70,16 +94,33 @@ def mix(a: Color, b: Color, t: float) -> Color:
 
 
 class Text:
-    """Renders text once and reuses the surface: the HUD redraws every frame."""
+    """Text rendering and the design-to-screen scale.
 
-    def __init__(self) -> None:
+    All sizes and distances in the UI code are design pixels; `px` converts
+    them. Rendered text is cached, because the HUD redraws every frame.
+    """
+
+    def __init__(self, scale: float = 1.0) -> None:
+        self.scale = scale
         self._fonts: dict[int, pygame.font.Font] = {}
         self._cache: dict[tuple, pygame.Surface] = {}
         self._cells: dict[int, int] = {}
 
+    def px(self, n: float) -> int:
+        """Design pixels to screen pixels; never rounds a visible size to 0."""
+        v = round(n * self.scale)
+        return v if v or not n else (1 if n > 0 else -1)
+
     def font(self, size: int) -> pygame.font.Font:
         if size not in self._fonts:
-            self._fonts[size] = pygame.font.Font(None, size)
+            real = max(8, round(size * self.scale * FONT_SIZE_FACTOR))
+            name = FONT_FILES[size >= BOLD_FROM]
+            try:
+                path = resources.files("drumgame").joinpath("data/fonts", name)
+                with resources.as_file(path) as f:
+                    self._fonts[size] = pygame.font.Font(str(f), real)
+            except (OSError, pygame.error):  # font file missing: pygame's default
+                self._fonts[size] = pygame.font.Font(None, round(size * self.scale))
         return self._fonts[size]
 
     def render(self, text: str, size: int, color: Color = TEXT, alpha: int = 255) -> pygame.Surface:
@@ -167,6 +208,6 @@ def bar(
         pygame.draw.rect(target, color, fill, border_radius=radius)
 
 
-def panel(target: pygame.Surface, rect: pygame.Rect) -> None:
-    pygame.draw.rect(target, PANEL, rect, border_radius=10)
-    pygame.draw.rect(target, PANEL_EDGE, rect, 1, border_radius=10)
+def panel(target: pygame.Surface, rect: pygame.Rect, radius: int = 10) -> None:
+    pygame.draw.rect(target, PANEL, rect, border_radius=radius)
+    pygame.draw.rect(target, PANEL_EDGE, rect, 1, border_radius=radius)
