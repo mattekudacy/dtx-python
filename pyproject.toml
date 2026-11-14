@@ -23,7 +23,7 @@ drumgame = "drumgame.main:main"
 include = ["drumgame*"]
 
 [tool.setuptools.package-data]
-drumgame = ["data/*.toml"]
+drumgame = ["data/*.toml", "data/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -32,6 +32,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--no-midi", action="store_true", help="keyboard only")
     p.add_argument("--layout", choices=["full", "compact"], help="lane layout")
+    p.add_argument("--fullscreen", action="store_true", help="start fullscreen (F11 toggles)")
+    p.add_argument(
+        "--ui-scale", type=float, metavar="N", help="UI size multiplier, 0.5 to 2.0 (default 1.0)"
+    )
+    p.add_argument(
+        "--no-fail", action="store_true", help="keep playing when the gauge empties (practice)"
+    )
     p.add_argument("--no-click", action="store_true", help="turn the metronome off")
     p.add_argument("--list-ports", action="store_true", help="list MIDI input ports and exit")
     p.add_argument(
@@ -98,6 +105,7 @@ def monitor(config: Config, args) -> int:
 def play(config: Config, args, chart: Chart) -> int:
     import pygame
 
+    from drumgame.game.display import open_display
     from drumgame.game.screens.play import PlayScreen
     from drumgame.input.keyboard_in import KeyboardInput, keymap_from_names
 
@@ -107,19 +115,20 @@ def play(config: Config, args, chart: Chart) -> int:
     hits: queue.Queue = queue.Queue()
     midi = None
     try:
-        screen = pygame.display.set_mode((config.width, config.height))
+        screen = open_display(config.width, config.height, config.fullscreen)
         pygame.display.set_caption(f"drumgame - {chart.title}")
         if args.no_midi:
-            status = "keyboard only (MIDI off)"
+            status = "Keyboard only (MIDI off)"
         else:
             midi = open_midi(config, args, hits)
             if midi.port_name is not None:
                 status = f"MIDI: {midi.port_name}"
             else:
-                status = "keyboard only (no MIDI)"
+                status = "Keyboard only: no MIDI device found"
                 print(f"MIDI unavailable ({midi.error}); using the keyboard", file=sys.stderr)
         keyboard = KeyboardInput(hits, keymap_from_names(config.keyboard))
-        stats = PlayScreen(screen, chart, config, hits, keyboard, status).run()
+        connected = midi is not None and midi.port_name is not None
+        stats = PlayScreen(screen, chart, config, hits, keyboard, status, connected).run()
         print(
             f"score {stats.score}  perfect {stats.perfect}  good {stats.good}  "
             f"miss {stats.miss}  stray {stats.stray}  max combo {stats.max_combo}"
@@ -146,6 +155,12 @@ def main(argv: list[str] | None = None) -> int:
     overrides: dict = {}
     if args.layout:
         overrides["video"] = {"layout": args.layout, "lane_order": []}
+    if args.fullscreen:
+        overrides.setdefault("video", {})["fullscreen"] = True
+    if args.ui_scale is not None:
+        overrides.setdefault("video", {})["ui_scale"] = args.ui_scale
+    if args.no_fail:
+        overrides["judge"] = {"can_fail": False}
     if args.no_click:
         overrides["audio"] = {"metronome": False}
     try:

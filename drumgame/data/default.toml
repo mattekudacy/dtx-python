@@ -13,7 +13,8 @@ midi_channel = 0
 debounce_ms = 30
 
 # Keyboard fallback: pygame key name = lane.
-# Esc, Enter and Backspace are reserved (quit, pause, restart).
+# Esc, Enter, Backspace and F11 are reserved (pause/quit, pause, restart,
+# fullscreen).
 [input.keyboard]
 q = "crash_l"
 s = "hihat"
@@ -62,6 +63,9 @@ l = "crash_r"
 # Starting values. Do not tune these from keyboard play.
 perfect_ms = 50
 good_ms = 100
+# The gauge beside the highway fills on hits and drains on misses. With
+# can_fail on, the song ends when it empties. Turn it off to practise.
+can_fail = true
 
 [audio]
 sample_rate = 44100
@@ -71,11 +75,20 @@ offset_ms = 0
 metronome = true
 
 [video]
+# Window size when not fullscreen. The window can be resized, and the whole
+# UI scales to fit it. F11 switches fullscreen on and off while playing.
 width = 1280
 height = 720
+fullscreen = false
+# Extra size on top of the automatic fit, 0.5 to 2.0. Above 1.0 makes text and
+# notes bigger (useful from behind a kit) until the layout runs out of room.
+ui_scale = 1.0
 fps = 120
 # Seconds a note takes to fall from the top of the highway to the hit line.
 scroll_seconds = 1.5
+# true = no hit beams, and judgement text and pad targets stay still. Pads
+# still light up when struck.
+reduce_motion = false
 # "full" (10 lanes) or "compact" (6 lanes).
 layout = "full"
 # Optional reordering of the layout's lanes, left to right. Empty = default.

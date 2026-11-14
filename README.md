@@ -34,12 +34,26 @@ drumgame                      # built-in rock beat
 drumgame songs/song.mid       # import a MIDI file and play its drum part
 drumgame songs/chart.json     # play a chart in the internal format
 drumgame --layout compact     # 6 lanes instead of 10
+drumgame --fullscreen         # or press F11 while playing
+drumgame --ui-scale 1.2       # bigger text and notes, for reading from the kit
+drumgame --no-fail            # practice: the song never ends early
 drumgame song.mid --save-chart songs/song.json   # convert, do not play
 ```
 
 Default keys, left to right: `Q` left crash, `S` hi-hat, `Z` hi-hat pedal,
 `D` snare, `F` high tom, `Space` kick, `J` mid tom, `K` floor tom, `L` right
-crash, `;` ride. `Esc` quits, `Enter` pauses, `Backspace` restarts.
+crash, `;` ride. `Esc` or `Enter` pauses, `Esc` again quits, `Backspace`
+restarts, `F11` switches fullscreen.
+
+The window can be resized and the whole screen scales to fit it. The gauge
+beside the highway fills on hits and drains on misses; when it empties the
+song ends, unless you pass `--no-fail` or set `can_fail = false`.
+
+On screen, left to right: a gauge of recent form, the highway, and an info
+panel. Judgements appear in the lane you hit (with EARLY or LATE on a "good"),
+the combo counter sits behind the notes, the song map shows where the busy
+parts and section starts are, and the timing meter in the panel shows your recent hits on an early-to-late scale with their average, which is
+the number to watch when calibrating.
 
 Keyboard hits are timestamped once per frame, so they are less precise than
 MIDI hits, which are stamped on arrival in the rtmidi callback thread. Do not
@@ -117,6 +131,11 @@ crash_r, ride`.
 The MIDI importer reads channel 10 using the General MIDI drum map, keeps the
 file's own tick resolution, and prints a warning for notes it cannot map or
 for files with nothing on channel 10.
+
+## Credits
+
+The interface is set in Barlow Semi Condensed by Jeremy Tribby, bundled under
+the SIL Open Font License (see `drumgame/data/fonts/OFL.txt`).
 
 ## Development
 

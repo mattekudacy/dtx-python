@@ -14,6 +14,10 @@ from drumgame.input.mapping import parse_note_map
 from drumgame.lanes import LANES, LAYOUTS, Layout
 
 
+# The UI scales to the window, but below this the text is too small to read.
+MIN_WIDTH, MIN_HEIGHT = 640, 360
+
+
 def user_config_path() -> Path:
     base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
     return Path(base) / "drumgame" / "config.toml"
@@ -37,6 +41,7 @@ class Config:
     keyboard: dict[str, str]  # key name -> lane
     midi_map: dict[int, str]
     windows: HitWindows
+    can_fail: bool
     sample_rate: int
     audio_buffer: int
     audio_offset_s: float
@@ -44,7 +49,10 @@ class Config:
     width: int
     height: int
     fps: int
+    fullscreen: bool
+    ui_scale: float
     scroll_seconds: float
+    reduce_motion: bool
     layout: Layout
 
     @classmethod
@@ -59,6 +67,12 @@ class Config:
                 raise ValueError(f"unknown lane {lane!r} for key {key!r}")
         if video["layout"] not in LAYOUTS:
             raise ValueError(f"video.layout must be one of {sorted(LAYOUTS)}")
+        if int(video["width"]) < MIN_WIDTH or int(video["height"]) < MIN_HEIGHT:
+            raise ValueError(f"video size must be at least {MIN_WIDTH}x{MIN_HEIGHT}")
+        if not 0.5 <= float(video["ui_scale"]) <= 2.0:
+            raise ValueError("video.ui_scale must be between 0.5 and 2.0")
+        if float(video["scroll_seconds"]) <= 0:
+            raise ValueError("video.scroll_seconds must be positive")
         layout = LAYOUTS[video["layout"]]
         if video.get("lane_order"):
             layout = layout.with_order(tuple(video["lane_order"]))
@@ -71,6 +85,7 @@ class Config:
             windows=HitWindows(
                 float(judge["perfect_ms"]) / 1000, float(judge["good_ms"]) / 1000
             ),
+            can_fail=bool(judge["can_fail"]),
             sample_rate=int(audio["sample_rate"]),
             audio_buffer=int(audio["buffer"]),
             audio_offset_s=float(audio["offset_ms"]) / 1000,
@@ -78,7 +93,10 @@ class Config:
             width=int(video["width"]),
             height=int(video["height"]),
             fps=int(video["fps"]),
+            fullscreen=bool(video["fullscreen"]),
+            ui_scale=float(video["ui_scale"]),
             scroll_seconds=float(video["scroll_seconds"]),
+            reduce_motion=bool(video["reduce_motion"]),
             layout=layout,
         )
 
