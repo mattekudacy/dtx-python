@@ -41,6 +41,12 @@ Default keys, left to right: `Q` left crash, `S` hi-hat, `Z` hi-hat pedal,
 `D` snare, `F` high tom, `Space` kick, `J` mid tom, `K` floor tom, `L` right
 crash, `;` ride. `Esc` quits, `Enter` pauses, `Backspace` restarts.
 
+On screen, left to right: a gauge of recent form, the highway, and an info
+panel. Judgements appear in the lane you hit (with EARLY or LATE on a "good"),
+the combo counter sits behind the notes, and the timing meter in the panel
+shows your recent hits on an early-to-late scale with their average, which is
+the number to watch when calibrating.
+
 Keyboard hits are timestamped once per frame, so they are less precise than
 MIDI hits, which are stamped on arrival in the rtmidi callback thread. Do not
 tune hit windows from keyboard play.

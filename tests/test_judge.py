@@ -112,3 +112,26 @@ def test_configurable_windows():
 def test_unsorted_notes_are_sorted():
     j = make((2.0, "snare"), (1.0, "kick"))
     assert [n.time for n in j.notes] == [1.0, 2.0]
+
+
+def test_gauge_fills_on_hits_and_drains_faster_on_misses():
+    j = make(*[(float(i), "snare") for i in range(1, 40)])
+    assert j.gauge.value == pytest.approx(0.5)
+    j.hit("snare", 1.0)
+    assert j.gauge.value == pytest.approx(0.52)
+    j.hit("snare", 2.08)
+    assert j.gauge.value == pytest.approx(0.53)
+    j.hit("snare", 2.5)  # stray: no change
+    assert j.gauge.value == pytest.approx(0.53)
+    j.update(3.5)
+    assert j.gauge.value == pytest.approx(0.47)
+    j.update(100.0)
+    assert j.gauge.value == 0.0  # clamped
+
+
+def test_grade_thresholds():
+    from drumgame.game.judge import grade
+
+    assert [grade(a) for a in (1.0, 0.95, 0.949, 0.9, 0.8, 0.7, 0.69, 0.0)] == [
+        "S", "S", "A", "A", "B", "C", "D", "D",
+    ]  # fmt: skip

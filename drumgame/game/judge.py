@@ -56,12 +56,38 @@ class Stats:
         return self.score / (judged * SCORE[Judgement.PERFECT]) if judged else 1.0
 
 
+GRADES = ((0.95, "S"), (0.90, "A"), (0.80, "B"), (0.70, "C"))
+
+
+def grade(accuracy: float) -> str:
+    for threshold, letter in GRADES:
+        if accuracy >= threshold:
+            return letter
+    return "D"
+
+
+class Gauge:
+    """A 0..1 meter of recent form: hits fill it, misses drain it faster.
+
+    Display only for now; nothing fails the song.
+    """
+
+    CHANGE = {Judgement.PERFECT: 0.02, Judgement.GOOD: 0.01, Judgement.MISS: -0.06}
+
+    def __init__(self, value: float = 0.5) -> None:
+        self.value = value
+
+    def apply(self, judgement: Judgement) -> None:
+        self.value = min(1.0, max(0.0, self.value + self.CHANGE.get(judgement, 0.0)))
+
+
 class Judge:
     def __init__(self, notes: Iterable[TimedNote], windows: HitWindows = HitWindows()) -> None:
         self.notes: list[TimedNote] = sorted(notes, key=lambda n: n.time)
         self.windows = windows
         self.results: list[Judgement | None] = [None] * len(self.notes)
         self.stats = Stats(total=len(self.notes))
+        self.gauge = Gauge()
         self._by_lane: dict[str, list[int]] = {}
         for i, n in enumerate(self.notes):
             self._by_lane.setdefault(n.lane, []).append(i)
@@ -101,6 +127,7 @@ class Judge:
             Judgement.PERFECT if abs(best_delta) <= self.windows.perfect_s else Judgement.GOOD
         )
         self.results[best] = judgement
+        self.gauge.apply(judgement)
         s = self.stats
         if judgement is Judgement.PERFECT:
             s.perfect += 1
@@ -125,6 +152,7 @@ class Judge:
                 self.results[i] = Judgement.MISS
                 self.stats.miss += 1
                 self.stats.combo = 0
+                self.gauge.apply(Judgement.MISS)
                 missed.append(JudgeResult(Judgement.MISS, note.lane, note.time, i))
             self._miss_cursor += 1
         return missed

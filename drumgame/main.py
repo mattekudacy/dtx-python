@@ -110,16 +110,17 @@ def play(config: Config, args, chart: Chart) -> int:
         screen = pygame.display.set_mode((config.width, config.height))
         pygame.display.set_caption(f"drumgame - {chart.title}")
         if args.no_midi:
-            status = "keyboard only (MIDI off)"
+            status = "Keyboard only (MIDI off)"
         else:
             midi = open_midi(config, args, hits)
             if midi.port_name is not None:
                 status = f"MIDI: {midi.port_name}"
             else:
-                status = "keyboard only (no MIDI)"
+                status = "Keyboard only: no MIDI device found"
                 print(f"MIDI unavailable ({midi.error}); using the keyboard", file=sys.stderr)
         keyboard = KeyboardInput(hits, keymap_from_names(config.keyboard))
-        stats = PlayScreen(screen, chart, config, hits, keyboard, status).run()
+        connected = midi is not None and midi.port_name is not None
+        stats = PlayScreen(screen, chart, config, hits, keyboard, status, connected).run()
         print(
             f"score {stats.score}  perfect {stats.perfect}  good {stats.good}  "
             f"miss {stats.miss}  stray {stats.stray}  max combo {stats.max_combo}"
