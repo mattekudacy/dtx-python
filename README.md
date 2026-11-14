@@ -39,12 +39,13 @@ drumgame song.mid --save-chart songs/song.json   # convert, do not play
 
 Default keys, left to right: `Q` left crash, `S` hi-hat, `Z` hi-hat pedal,
 `D` snare, `F` high tom, `Space` kick, `J` mid tom, `K` floor tom, `L` right
-crash, `;` ride. `Esc` quits, `Enter` pauses, `Backspace` restarts.
+crash, `;` ride. `Esc` or `Enter` pauses, `Esc` again quits, `Backspace`
+restarts.
 
 On screen, left to right: a gauge of recent form, the highway, and an info
 panel. Judgements appear in the lane you hit (with EARLY or LATE on a "good"),
-the combo counter sits behind the notes, and the timing meter in the panel
-shows your recent hits on an early-to-late scale with their average, which is
+the combo counter sits behind the notes, the song map shows where the busy
+parts and section starts are, and the timing meter in the panel shows your recent hits on an early-to-late scale with their average, which is
 the number to watch when calibrating.
 
 Keyboard hits are timestamped once per frame, so they are less precise than

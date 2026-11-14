@@ -9,26 +9,9 @@ import pygame
 
 from drumgame.chart.model import TimedNote
 from drumgame.game.judge import Judgement
-from drumgame.game.ui import (
-    BG,
-    JUDGE_COLORS,
-    LANE_COLORS,
-    LANE_LABELS,
-    TEXT,
-    TEXT_DIM,
-    Color,
-    Text,
-    mix,
-)
+from drumgame.game import ui
+from drumgame.game.ui import JUDGE_COLORS, LANE_COLORS, LANE_LABELS, TEXT, TEXT_DIM, mix
 from drumgame.lanes import PEDAL_LANES, Layout
-
-LANE_BASE: Color = (16, 17, 25)
-LANE_TINT = 0.13  # how much of its colour each lane's background carries
-SEPARATOR: Color = (8, 9, 13)
-BEAT_LINE: Color = (52, 55, 74)
-BAR_LINE: Color = (128, 132, 160)
-HIT_LINE: Color = (240, 242, 250)
-FOOTER_BG: Color = (14, 15, 22)
 
 FLASH_S = 0.14  # pad target and beam after a hit
 POPUP_S = 0.45  # in-lane judgement text
@@ -46,11 +29,13 @@ class Highway:
         scroll_seconds: float,
         text: Text,
         key_labels: dict[str, str] | None = None,
+        reduce_motion: bool = False,
     ) -> None:
         self.rect = rect
         self.layout = layout
         self.notes = notes  # sorted by time, same order as Judge.notes
         self.text = text
+        self.reduce_motion = reduce_motion
         self._times = [n.time for n in notes]
         self.hit_y = rect.bottom - FOOTER_H
         self.pps = (self.hit_y - rect.top) / scroll_seconds  # pixels per second
@@ -94,6 +79,7 @@ class Highway:
             surf, mix(color, (255, 255, 255), 0.55), pygame.Rect(3, 2, w - 6, max(2, h // 4)),
             border_radius=2,
         )  # fmt: skip
+        surf = surf.convert_alpha()
         if missed:
             surf.set_alpha(55)
         elif ghost:
@@ -107,26 +93,26 @@ class Highway:
         for y in range(BEAM_H):
             a = round(150 * (y / BEAM_H) ** 2)
             pygame.draw.line(surf, (*color, a), (0, y), (self.lane_w, y))
-        return surf
+        return surf.convert_alpha()
 
     def _make_background(self) -> pygame.Surface:
         surf = pygame.Surface(self.rect.size)
-        surf.fill(LANE_BASE)
+        surf.fill(ui.LANE_BASE)
         for i, lane in enumerate(self.layout.lanes):
             x = i * self.lane_w
             pygame.draw.rect(
                 surf,
-                mix(LANE_BASE, LANE_COLORS[lane], LANE_TINT),
+                mix(ui.LANE_BASE, LANE_COLORS[lane], ui.LANE_TINT),
                 pygame.Rect(x, 0, self.lane_w, self.rect.height),
             )
-            pygame.draw.line(surf, SEPARATOR, (x, 0), (x, self.rect.height), 2)
-        return surf
+            pygame.draw.line(surf, ui.SEPARATOR, (x, 0), (x, self.rect.height), 2)
+        return surf.convert()
 
     def _make_footer(self) -> pygame.Surface:
         """Everything below the pad targets: lane names and their keys."""
         h = FOOTER_H - 20
         surf = pygame.Surface((self.rect.width, h))
-        surf.fill(FOOTER_BG)
+        surf.fill(ui.FOOTER_BG)
         for i, lane in enumerate(self.layout.lanes):
             x = i * self.lane_w
             cx = x + self.lane_w // 2
@@ -138,18 +124,18 @@ class Highway:
                 kw = max(26, self.text.font(18).size(key)[0] + 12)
                 cap = pygame.Rect(0, 0, min(kw, self.lane_w - 6), 22)
                 cap.center = (cx, 60)
-                pygame.draw.rect(surf, (30, 33, 46), cap, border_radius=5)
-                pygame.draw.rect(surf, (62, 66, 88), cap, 1, border_radius=5)
+                pygame.draw.rect(surf, ui.KEYCAP, cap, border_radius=5)
+                pygame.draw.rect(surf, ui.KEYCAP_EDGE, cap, 1, border_radius=5)
                 self.text.draw(surf, key, 18, cap.center, TEXT_DIM, "center")
-        return surf
+        return surf.convert()
 
     def _make_fade(self) -> pygame.Surface:
         """Notes ease in at the top instead of popping into view."""
         surf = pygame.Surface((self.rect.width, FADE_H), pygame.SRCALPHA)
         for y in range(FADE_H):
             a = round(235 * (1 - y / FADE_H) ** 1.6)
-            pygame.draw.line(surf, (*BG, a), (0, y), (self.rect.width, y))
-        return surf
+            pygame.draw.line(surf, (*ui.BG, a), (0, y), (self.rect.width, y))
+        return surf.convert_alpha()
 
     # -- state ---------------------------------------------------------------
 
@@ -190,20 +176,24 @@ class Highway:
                 break
             y = round(self.y_at(t, now))
             pygame.draw.line(
-                surface, BAR_LINE if is_bar else BEAT_LINE, (r.left, y), (r.right, y),
+                surface, ui.BAR_LINE if is_bar else ui.BEAT_LINE, (r.left, y), (r.right, y),
                 2 if is_bar else 1,
             )  # fmt: skip
 
         if combo >= 4:  # behind the notes, where the eyes already are
             cy = r.top + (self.hit_y - r.top) * 0.36
-            self.text.draw(surface, str(combo), 150, (r.centerx, cy), TEXT, "center", 44)
-            self.text.draw(surface, "COMBO", 30, (r.centerx, cy + 62), TEXT, "center", 60)
+            # Alpha 95 keeps the number at about 3:1 on the lanes: readable at a
+            # glance, still clearly behind the chips.
+            self.text.draw(surface, str(combo), ui.DISPLAY, (r.centerx, cy), TEXT, "center", 95)
+            self.text.draw(surface, "COMBO", ui.TITLE, (r.centerx, cy + 62), TEXT, "center", 95)
 
         for lane, (judgement, t_hit, _) in self._hits.items():
             age = wall_time - t_hit
+            if self.reduce_motion:
+                break
             if judgement is not Judgement.MISS and 0 <= age < FLASH_S:
                 beam = self._beams[lane]
-                beam.set_alpha(round(255 * (1 - age / FLASH_S)))
+                beam.set_alpha(round(255 * (1 - ui.ease_out(age / FLASH_S))))
                 surface.blit(beam, (self._lane_x[lane], self.hit_y - BEAM_H))
 
         lo = bisect_left(self._times, t_bottom)
@@ -219,8 +209,8 @@ class Highway:
 
         surface.blit(self._fade, r.topleft)
         surface.blit(self._footer, (r.left, self.hit_y + 20))
-        pygame.draw.rect(surface, FOOTER_BG, pygame.Rect(r.left, self.hit_y, r.width, 20))
-        pygame.draw.line(surface, HIT_LINE, (r.left, self.hit_y), (r.right - 1, self.hit_y), 3)
+        pygame.draw.rect(surface, ui.FOOTER_BG, pygame.Rect(r.left, self.hit_y, r.width, 20))
+        pygame.draw.line(surface, ui.HIT_LINE, (r.left, self.hit_y), (r.right - 1, self.hit_y), 3)
         self._draw_targets(surface, wall_time)
         self._draw_popups(surface, wall_time)
         surface.set_clip(prev_clip)
@@ -234,14 +224,16 @@ class Highway:
             if hit is not None and hit[0] is not Judgement.MISS:
                 age = wall_time - hit[1]
                 if 0 <= age < FLASH_S:
-                    glow = 1 - age / FLASH_S
+                    glow = 1 - ui.ease_out(age / FLASH_S)
             if lane in PEDAL_LANES:
-                shape = pygame.Rect(0, 0, self.lane_w - 10, 16 + round(4 * glow))
+                shape = pygame.Rect(
+                    0, 0, self.lane_w - 10, 16 + (0 if self.reduce_motion else round(4 * glow))
+                )
             else:
-                grow = round(6 * glow)
+                grow = 0 if self.reduce_motion else round(6 * glow)
                 shape = pygame.Rect(0, 0, int(self.lane_w * 0.76) + grow, 24 + grow)
             shape.center = (x + self.lane_w // 2, self.hit_y)
-            fill = mix(mix(LANE_BASE, color, 0.22), (255, 255, 255), 0.85 * glow)
+            fill = mix(mix(ui.LANE_BASE, color, 0.22), (255, 255, 255), 0.85 * glow)
             edge = mix(color, (255, 255, 255), 0.6 * glow)
             if lane in PEDAL_LANES:
                 pygame.draw.rect(surface, fill, shape, border_radius=6)
@@ -259,7 +251,7 @@ class Highway:
             k = age / POPUP_S
             alpha = round(255 * (1 - k * k))
             cx = self._lane_x[lane] + self.lane_w // 2
-            y = self.hit_y - 44 - 16 * (1 - (1 - k) ** 3)
+            y = self.hit_y - 44 - (0 if self.reduce_motion else 16 * ui.ease_out(k))
             color = JUDGE_COLORS[judgement]
             self.text.draw(
                 surface, judgement.value.upper(), self._popup_size, (cx, y), color, "center", alpha

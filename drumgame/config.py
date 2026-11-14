@@ -14,6 +14,10 @@ from drumgame.input.mapping import parse_note_map
 from drumgame.lanes import LANES, LAYOUTS, Layout
 
 
+# Below this the highway and the info panel no longer fit side by side.
+MIN_WIDTH, MIN_HEIGHT = 1024, 640
+
+
 def user_config_path() -> Path:
     base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
     return Path(base) / "drumgame" / "config.toml"
@@ -45,6 +49,7 @@ class Config:
     height: int
     fps: int
     scroll_seconds: float
+    reduce_motion: bool
     layout: Layout
 
     @classmethod
@@ -59,6 +64,10 @@ class Config:
                 raise ValueError(f"unknown lane {lane!r} for key {key!r}")
         if video["layout"] not in LAYOUTS:
             raise ValueError(f"video.layout must be one of {sorted(LAYOUTS)}")
+        if int(video["width"]) < MIN_WIDTH or int(video["height"]) < MIN_HEIGHT:
+            raise ValueError(f"video size must be at least {MIN_WIDTH}x{MIN_HEIGHT}")
+        if float(video["scroll_seconds"]) <= 0:
+            raise ValueError("video.scroll_seconds must be positive")
         layout = LAYOUTS[video["layout"]]
         if video.get("lane_order"):
             layout = layout.with_order(tuple(video["lane_order"]))
@@ -79,6 +88,7 @@ class Config:
             height=int(video["height"]),
             fps=int(video["fps"]),
             scroll_seconds=float(video["scroll_seconds"]),
+            reduce_motion=bool(video["reduce_motion"]),
             layout=layout,
         )
 

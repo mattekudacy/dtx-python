@@ -13,7 +13,7 @@ midi_channel = 0
 debounce_ms = 30
 
 # Keyboard fallback: pygame key name = lane.
-# Esc, Enter and Backspace are reserved (quit, pause, restart).
+# Esc, Enter and Backspace are reserved (pause/quit, pause, restart).
 [input.keyboard]
 q = "crash_l"
 s = "hihat"
@@ -71,11 +71,15 @@ offset_ms = 0
 metronome = true
 
 [video]
+# Window size; the minimum is 1024 x 640.
 width = 1280
 height = 720
 fps = 120
 # Seconds a note takes to fall from the top of the highway to the hit line.
 scroll_seconds = 1.5
+# true = no hit beams, and judgement text and pad targets stay still. Pads
+# still light up when struck.
+reduce_motion = false
 # "full" (10 lanes) or "compact" (6 lanes).
 layout = "full"
 # Optional reordering of the layout's lanes, left to right. Empty = default.

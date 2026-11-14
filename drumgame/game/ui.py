@@ -19,6 +19,26 @@ ACCENT: Color = (120, 200, 255)
 OK: Color = (110, 220, 140)
 WARN: Color = (240, 180, 80)
 
+# Highway surfaces.
+LANE_BASE: Color = (16, 17, 25)
+LANE_TINT = 0.13  # how much of its colour each lane's background carries
+SEPARATOR: Color = (8, 9, 13)
+BEAT_LINE: Color = (52, 55, 74)
+BAR_LINE: Color = (128, 132, 160)
+HIT_LINE: Color = (240, 242, 250)
+FOOTER_BG: Color = (14, 15, 22)
+KEYCAP: Color = (30, 33, 46)
+KEYCAP_EDGE: Color = (62, 66, 88)
+
+# Type scale. The player sits behind a kit, further from the screen than a
+# desk user, so nothing informative goes below CAPTION.
+CAPTION = 20
+BODY = 24
+TITLE = 32
+VALUE = 44
+SCORE = 88
+DISPLAY = 150
+
 LANE_COLORS: dict[str, Color] = {
     "crash_l": (235, 90, 165),
     "hihat": (70, 170, 240),
@@ -55,6 +75,7 @@ class Text:
     def __init__(self) -> None:
         self._fonts: dict[int, pygame.font.Font] = {}
         self._cache: dict[tuple, pygame.Surface] = {}
+        self._cells: dict[int, int] = {}
 
     def font(self, size: int) -> pygame.font.Font:
         if size not in self._fonts:
@@ -98,28 +119,41 @@ class Text:
             text = text[:-1]
         return text.rstrip() + "..."
 
-    def digits(
+    def _digit_cell(self, size: int) -> int:
+        if size not in self._cells:
+            self._cells[size] = max(self.font(size).size(d)[0] for d in "0123456789")
+        return self._cells[size]
+
+    def tabular(
         self,
         target: pygame.Surface,
-        value: int,
-        places: int,
+        text: str,
         size: int,
-        pos: tuple[int, int],
+        pos: tuple[float, float],
         color: Color = TEXT,
-        zero_color: Color = TEXT_FAINT,
+        align: str = "left",
+        faint: int = 0,
     ) -> int:
-        """Draw a zero-padded number in fixed-width cells so it never jitters.
-
-        Leading zeros are drawn faint. Returns the total width.
+        """Draw text with every digit in a fixed-width cell, so changing
+        numbers never shift their neighbours. `pos` is the top-left corner,
+        or the top-right with align="right". The first `faint` characters
+        are drawn in the placeholder colour. Returns the width drawn.
         """
-        font = self.font(size)
-        cell = max(font.size(d)[0] for d in "0123456789")
-        s = str(max(0, value)).rjust(places, "0")
-        lead = len(s) - len(str(max(0, value))) if value > 0 else len(s) - 1
-        for i, ch in enumerate(s):
-            surf = self.render(ch, size, zero_color if i < lead else color)
-            target.blit(surf, surf.get_rect(midtop=(pos[0] + i * cell + cell // 2, pos[1])))
-        return cell * len(s)
+        font, cell = self.font(size), self._digit_cell(size)
+        widths = [cell if ch.isdigit() else font.size(ch)[0] for ch in text]
+        x = round(pos[0]) - (sum(widths) if align == "right" else 0)
+        y = round(pos[1])
+        for i, (ch, w) in enumerate(zip(text, widths)):
+            surf = self.render(ch, size, TEXT_FAINT if i < faint else color)
+            target.blit(surf, surf.get_rect(midtop=(x + w // 2, y)))
+            x += w
+        return sum(widths)
+
+
+def ease_out(k: float) -> float:
+    """Cubic ease-out over 0..1: fast at first, settling at the end."""
+    k = max(0.0, min(1.0, k))
+    return 1 - (1 - k) ** 3
 
 
 def bar(

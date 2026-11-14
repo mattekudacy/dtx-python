@@ -159,3 +159,13 @@ def test_play_screen_headless_smoke(monkeypatch, tmp_path):
         assert stats.perfect == 1 and stats.stray == 1
     finally:
         pygame.quit()
+
+
+def test_window_size_and_scroll_are_validated():
+    from drumgame.config import Config, default_dict
+
+    for patch in ({"width": 800}, {"height": 480}, {"scroll_seconds": 0}):
+        data = default_dict()
+        data["video"].update(patch)
+        with pytest.raises(ValueError):
+            Config.from_dict(data)
