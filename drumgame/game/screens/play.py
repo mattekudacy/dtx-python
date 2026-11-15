@@ -19,9 +19,9 @@ from drumgame.chart.timing import beat_grid, chart_tempo_map, resolve_notes
 from drumgame.config import Config
 from drumgame.game import ui
 from drumgame.game.clock import SongClock
-from drumgame.game.display import open_display
 from drumgame.game.highway import Highway
 from drumgame.game.judge import Judge, Judgement, Stats, grade
+from drumgame.game.screens.base import Screen
 from drumgame.game.metronome import click_schedule, render_click_track
 from drumgame.input.events import HitEvent
 from drumgame.input.keyboard_in import KeyboardInput
@@ -41,7 +41,7 @@ GRADE_COLORS = {"S": ui.JUDGE_COLORS[Judgement.PERFECT], "A": ui.OK, "B": ui.ACC
                 "C": ui.WARN, "D": ui.JUDGE_COLORS[Judgement.MISS]}  # fmt: skip
 
 
-class PlayScreen:
+class PlayScreen(Screen):
     def __init__(
         self,
         screen: pygame.Surface,
@@ -53,13 +53,12 @@ class PlayScreen:
         midi_connected: bool = False,
     ) -> None:
         self.chart = chart
-        self.config = config
+        self.config = config  # arrange() needs it before Screen.__init__ runs
         self.hits = hits
         self.keyboard = keyboard
         self.midi_status = midi_status
         self.midi_connected = midi_connected
         self.layout = config.layout
-        self.fullscreen = bool(screen.get_flags() & pygame.FULLSCREEN)
 
         tempo_map = chart_tempo_map(chart)
         self.notes = resolve_notes(collapse_lanes(chart.notes, self.layout), tempo_map)
@@ -87,17 +86,14 @@ class PlayScreen:
         self.deltas: deque[float] = deque(maxlen=TIMING_HISTORY)
         self.finished = False
         self.failed = False
-        self.set_screen(screen)
+        super().__init__(screen, config)
 
     # -- layout --------------------------------------------------------------
 
-    def set_screen(self, screen: pygame.Surface) -> None:
-        """Lay everything out for this surface. Called again whenever the
-        window is resized or switches to or from fullscreen."""
-        self.screen = screen
-        w, h = screen.get_size()
-        self.text = ui.Text(ui.fit_scale(w, h, self.config.ui_scale))
-        px = self.px = self.text.px
+    def arrange(self) -> None:
+        """Lay everything out for the current surface."""
+        w, h = self.screen.get_size()
+        px = self.px
 
         # Left to right: gauge, highway, info panel; centred if the window is wider.
         n = len(self.layout.lanes)
@@ -125,10 +121,6 @@ class PlayScreen:
         r = px(95)
         self._count_disc = pygame.Surface((2 * r, 2 * r), pygame.SRCALPHA)
         pygame.draw.circle(self._count_disc, (*ui.BG, 215), (r, r), r)
-
-    def toggle_fullscreen(self) -> None:
-        self.fullscreen = not self.fullscreen
-        self.set_screen(open_display(self.config.width, self.config.height, self.fullscreen))
 
     def _make_song_map(self, width: int) -> tuple[pygame.Surface, pygame.Surface]:
         """The song as a strip of note density, with section starts marked.
@@ -220,8 +212,8 @@ class PlayScreen:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
-                elif event.type == pygame.VIDEORESIZE:
-                    self.set_screen(pygame.display.get_surface())
+                elif self.system_event(event):
+                    pass
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     # Esc never throws a run away in one press: it pauses first.
                     if self.finished or self.clock.paused:
@@ -232,8 +224,6 @@ class PlayScreen:
                     self.toggle_pause()
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_BACKSPACE:
                     self.start()
-                elif event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
-                    self.toggle_fullscreen()
                 else:
                     self.keyboard.handle_event(event)
 
@@ -372,7 +362,10 @@ class PlayScreen:
             text.tabular(screen, str(count), ui.BODY, (x + px(150), y), align="right")
             y += px(28)
 
-        self._draw_timing(pygame.Rect(x, y + px(24), p.width, px(70)))
+        ui.timing_meter(
+            screen, text, pygame.Rect(x, y + px(24), p.width, px(70)), tuple(self.deltas),
+            self.config.windows.perfect_s, self.config.windows.good_s, TIMING_HISTORY,
+        )  # fmt: skip
 
         # Input status and the controls that apply right now, bottom-aligned.
         by = p.bottom - px(52)
@@ -393,43 +386,6 @@ class PlayScreen:
             hints = "Esc pause    Backspace restart    F11 fullscreen"
         text.draw(screen, text.fit(hints, ui.CAPTION, p.width), ui.CAPTION, (x, by + px(30)),
                   ui.TEXT_DIM)  # fmt: skip
-
-    def _draw_timing(self, r: pygame.Rect) -> None:
-        """Recent hits on an early-to-late scale, with their average in words."""
-        screen, text, win, px = self.screen, self.text, self.config.windows, self.px
-        if self.deltas:
-            avg = sum(self.deltas) / len(self.deltas) * 1000
-            side = "late" if avg > 0 else "early"
-            label = "On the beat" if abs(avg) < 5 else f"{abs(avg):.0f} ms {side} on average"
-            text.tabular(screen, label, ui.CAPTION, r.topleft)
-        else:
-            empty = text.fit("Timing appears here once you hit a note", ui.CAPTION, r.width)
-            text.draw(screen, empty, ui.CAPTION, r.topleft, ui.TEXT_DIM)
-        track = pygame.Rect(r.left, r.top + px(28), r.width, px(18))
-        pygame.draw.rect(screen, ui.TRACK, track, border_radius=px(4))
-        half = track.width / 2
-        perfect_w = round(half * win.perfect_s / win.good_s)
-        zone = pygame.Rect(track.centerx - perfect_w, track.top, perfect_w * 2, track.height)
-        pygame.draw.rect(screen, ui.mix(ui.TRACK, ui.JUDGE_COLORS[Judgement.PERFECT], 0.16), zone)
-        pygame.draw.line(
-            screen, ui.TEXT_DIM, (track.centerx, track.top - px(3)),
-            (track.centerx, track.bottom + px(2)), max(1, px(1)),
-        )  # fmt: skip
-        count = len(self.deltas)
-        for i, delta in enumerate(self.deltas):  # oldest first, so the newest sits on top
-            k = max(-1.0, min(1.0, delta / win.good_s))
-            tx = round(track.centerx + k * (half - px(2)))
-            judgement = Judgement.PERFECT if abs(delta) <= win.perfect_s else Judgement.GOOD
-            age = (count - 1 - i) / TIMING_HISTORY
-            color = ui.mix(ui.JUDGE_COLORS[judgement], ui.TRACK, 0.75 * age)
-            pygame.draw.line(
-                screen, color, (tx, track.top + px(2)), (tx, track.bottom - px(3)), px(3)
-            )
-        text.draw(screen, "early", ui.CAPTION, (track.left, track.bottom + px(4)), ui.TEXT_DIM)
-        text.draw(
-            screen, "late", ui.CAPTION, (track.right, track.bottom + px(4)), ui.TEXT_DIM,
-            "topright",
-        )  # fmt: skip
 
     def _highway_point(self, fraction: float) -> tuple[int, int]:
         hw = self.highway

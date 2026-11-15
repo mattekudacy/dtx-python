@@ -1,8 +1,9 @@
-"""MIDI note -> lane mapping helpers and per-lane debounce."""
+"""MIDI note -> lane mapping helpers, learn mode and per-lane debounce."""
 
 from __future__ import annotations
 
-from typing import Mapping
+from dataclasses import dataclass
+from typing import Mapping, Sequence
 
 from drumgame.lanes import LANES
 
@@ -43,3 +44,88 @@ class Debouncer:
             return False
         self._last[lane] = t
         return True
+
+
+@dataclass(frozen=True, slots=True)
+class LearnStep:
+    lane: str
+    name: str
+    hint: str
+
+
+LEARN_STEPS: tuple[LearnStep, ...] = (
+    LearnStep("kick", "Kick", "Play the kick pedal a few times."),
+    LearnStep("snare", "Snare", "Hit the head and the rim, and play a cross-stick."),
+    LearnStep("tom_hi", "Tom 1", "Hit the head and the rim."),
+    LearnStep("tom_mid", "Tom 2", "Hit the head and the rim."),
+    LearnStep("tom_floor", "Floor tom", "Hit the head and the rim."),
+    LearnStep("hihat", "Hi-hat", "Hit the bow and the edge, with the pedal open and then closed."),
+    LearnStep("hh_pedal", "Hi-hat pedal", "Close the pedal with your foot, without a stick."),
+    LearnStep("crash_l", "Crash 1 (left)", "Hit the bow and the edge."),
+    LearnStep("crash_r", "Crash 2 (right)", "Hit the bow and the edge."),
+    LearnStep("ride", "Ride", "Hit the bow, the edge and the bell."),
+)
+
+# Softer notes are ignored while learning: a firm hit on one pad can make its
+# neighbours send quiet notes of their own (crosstalk).
+MIN_LEARN_VELOCITY = 25
+
+
+class LearnSession:
+    """Walks through the pads one at a time and records the notes each sends.
+
+    Pure logic: feed it note numbers, move with next/back, read `result`.
+    """
+
+    def __init__(
+        self, steps: Sequence[LearnStep] = LEARN_STEPS, min_velocity: int = MIN_LEARN_VELOCITY
+    ) -> None:
+        self.steps = tuple(steps)
+        self.min_velocity = min_velocity
+        self.index = 0
+        self.notes: dict[str, list[int]] = {step.lane: [] for step in self.steps}
+
+    @property
+    def done(self) -> bool:
+        return self.index >= len(self.steps)
+
+    @property
+    def current(self) -> LearnStep | None:
+        return None if self.done else self.steps[self.index]
+
+    def feed(self, note: int, velocity: int) -> str:
+        """Record a note for the current pad. Returns what happened:
+        "added", "repeat", "soft", "moved:<lane it was taken from>" or "done".
+        """
+        step = self.current
+        if step is None:
+            return "done"
+        if velocity < self.min_velocity:
+            return "soft"
+        if note in self.notes[step.lane]:
+            return "repeat"
+        status = "added"
+        for lane, notes in self.notes.items():
+            if note in notes:  # the latest pad to send a note keeps it
+                notes.remove(note)
+                status = f"moved:{lane}"
+        self.notes[step.lane].append(note)
+        return status
+
+    def next(self) -> None:
+        """Go to the next pad. A pad left with no notes is simply not mapped."""
+        if not self.done:
+            self.index += 1
+
+    def back(self) -> None:
+        if self.index > 0:
+            self.index -= 1
+
+    def clear(self) -> None:
+        """Forget the notes of the current pad, to hit it again."""
+        step = self.current
+        if step is not None:
+            self.notes[step.lane].clear()
+
+    def result(self) -> dict[int, str]:
+        return {note: lane for lane, notes in self.notes.items() for note in notes}

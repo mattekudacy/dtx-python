@@ -211,3 +211,51 @@ def bar(
 def panel(target: pygame.Surface, rect: pygame.Rect, radius: int = 10) -> None:
     pygame.draw.rect(target, PANEL, rect, border_radius=radius)
     pygame.draw.rect(target, PANEL_EDGE, rect, 1, border_radius=radius)
+
+
+def timing_meter(
+    target: pygame.Surface,
+    text: Text,
+    rect: pygame.Rect,
+    deltas: "list[float] | tuple[float, ...]",
+    perfect_s: float,
+    good_s: float,
+    history: int = 24,
+    empty_caption: str = "Timing appears here once you hit a note",
+    show_average: bool = True,
+) -> None:
+    """Recent hits on an early-to-late scale, with their average in words.
+
+    `deltas` are hit time minus note time in seconds, oldest first.
+    """
+    px = text.px
+    if deltas and not show_average:
+        pass
+    elif deltas:
+        avg = sum(deltas) / len(deltas) * 1000
+        side = "late" if avg > 0 else "early"
+        label = "On the beat" if abs(avg) < 5 else f"{abs(avg):.0f} ms {side} on average"
+        text.tabular(target, label, CAPTION, rect.topleft)
+    else:
+        text.draw(target, text.fit(empty_caption, CAPTION, rect.width), CAPTION, rect.topleft,
+                  TEXT_DIM)  # fmt: skip
+    track = pygame.Rect(rect.left, rect.top + px(28), rect.width, px(18))
+    pygame.draw.rect(target, TRACK, track, border_radius=px(4))
+    half = track.width / 2
+    perfect_w = round(half * perfect_s / good_s)
+    zone = pygame.Rect(track.centerx - perfect_w, track.top, perfect_w * 2, track.height)
+    pygame.draw.rect(target, mix(TRACK, JUDGE_COLORS[Judgement.PERFECT], 0.16), zone)
+    pygame.draw.line(
+        target, TEXT_DIM, (track.centerx, track.top - px(3)),
+        (track.centerx, track.bottom + px(2)), max(1, px(1)),
+    )  # fmt: skip
+    count = len(deltas)
+    for i, delta in enumerate(deltas):  # oldest first, so the newest sits on top
+        k = max(-1.0, min(1.0, delta / good_s))
+        tx = round(track.centerx + k * (half - px(2)))
+        judgement = Judgement.PERFECT if abs(delta) <= perfect_s else Judgement.GOOD
+        age = min(1.0, (count - 1 - i) / history)
+        color = mix(JUDGE_COLORS[judgement], TRACK, 0.75 * age)
+        pygame.draw.line(target, color, (tx, track.top + px(2)), (tx, track.bottom - px(3)), px(3))
+    text.draw(target, "early", CAPTION, (track.left, track.bottom + px(4)), TEXT_DIM)
+    text.draw(target, "late", CAPTION, (track.right, track.bottom + px(4)), TEXT_DIM, "topright")

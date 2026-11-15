@@ -5,9 +5,10 @@ one lane per pad; you hit the pads in time. Input is MIDI (built around a
 Roland TD-17), with the computer keyboard as a full fallback so it is playable
 with no kit.
 
-Status: early. There is one play screen, a built-in rock beat, a metronome,
-judging and scoring, and a MIDI-file importer. Not built yet: learn mode,
-latency calibration, backing audio, Guitar Pro and `.dtx` import, menus.
+Status: early. There is a play screen, a built-in rock beat, a metronome,
+judging and scoring, a MIDI-file importer, learn mode and latency
+calibration. Not built yet: backing audio, Guitar Pro and `.dtx` import,
+menus. Nothing has been tested on a real kit yet.
 
 ## Setup (Arch Linux)
 
@@ -65,15 +66,34 @@ tune hit windows from keyboard play.
 drumgame --list-ports         # the kit should be listed
 drumgame --monitor            # print every hit: channel, note, lane, status
 drumgame --port TD-17         # pick a port by name substring
+drumgame --learn              # record which notes each pad sends
+drumgame --calibrate          # measure and save your audio offset
 ```
 
 TD-17 settings: USB driver mode **GENERIC**, MIDI Tx/Rx **ON**, connected
 directly rather than through a hub. If the port does not show up, check those
 first, then `amidi -l` and `aseqdump -l`.
 
-**The built-in TD-17 note map is an unverified draft.** Run `--monitor`, hit
-every pad and zone, and fix any line that says `unmapped` or shows the wrong
-lane by overriding it in your config.
+### First time with the kit
+
+Nothing below has been run against real hardware yet, so do these in order
+and expect to find problems:
+
+1. `drumgame --list-ports` shows the TD-17. (This is also the first test of
+   `python-rtmidi` on your machine.)
+2. `drumgame --monitor`, then hit every pad: each hit prints one line, with no
+   doubles and none missing.
+3. `drumgame --learn` and follow the screen. It asks for each pad in turn and
+   records the notes it sends, replacing the built-in note map, which is an
+   **unverified draft**. Soft notes are ignored to keep crosstalk out.
+4. `drumgame --calibrate` and play along to 16 clicks. It measures how far
+   your hits land from the click and saves that as the audio offset.
+   Calibrate with the kit, not the keyboard: they have different delays.
+5. Play the built-in beat. In-time playing should land as "perfect". If hits
+   double or go missing, change `debounce_ms` in your config.
+
+Learn mode and calibration save to `~/.config/drumgame/saved.json`, which
+takes precedence over `config.toml`. `drumgame --reset-saved` removes it.
 
 To exercise the MIDI path with no kit, run the game with a virtual port and
 send it a beat:
