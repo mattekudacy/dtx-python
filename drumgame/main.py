@@ -45,6 +45,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--monitor", action="store_true", help="print incoming MIDI hits (no game window)"
     )
     p.add_argument(
+        "--learn", action="store_true",
+        help="learn mode: hit each pad so the game records which MIDI notes it sends",
+    )
+    p.add_argument(
+        "--calibrate", action="store_true",
+        help="play along to a click to measure and save your audio offset",
+    )
+    p.add_argument(
+        "--reset-saved", action="store_true",
+        help="forget the learned note map and calibration, then exit",
+    )
+    p.add_argument(
         "--save-chart", metavar="OUT.json", help="write the loaded chart as JSON and exit"
     )
     return p
@@ -102,32 +114,39 @@ def monitor(config: Config, args) -> int:
     return 0
 
 
-def play(config: Config, args, chart: Chart) -> int:
+def _start_pygame(config: Config):
     import pygame
 
     from drumgame.game.display import open_display
-    from drumgame.game.screens.play import PlayScreen
-    from drumgame.input.keyboard_in import KeyboardInput, keymap_from_names
 
     # A small mixer buffer keeps audio latency low; it must be set before init.
     pygame.mixer.pre_init(config.sample_rate, -16, 2, config.audio_buffer)
     pygame.init()
+    return pygame, open_display(config.width, config.height, config.fullscreen)
+
+
+def _open_inputs(config: Config, args, hits):
+    """Returns (midi or None, status text, connected)."""
+    if args.no_midi:
+        return None, "Keyboard only (MIDI off)", False
+    midi = open_midi(config, args, hits)
+    if midi.port_name is not None:
+        return midi, f"MIDI: {midi.port_name}", True
+    print(f"MIDI unavailable ({midi.error}); using the keyboard", file=sys.stderr)
+    return midi, "Keyboard only: no MIDI device found", False
+
+
+def play(config: Config, args, chart: Chart) -> int:
+    from drumgame.game.screens.play import PlayScreen
+    from drumgame.input.keyboard_in import KeyboardInput, keymap_from_names
+
+    pygame, screen = _start_pygame(config)
     hits: queue.Queue = queue.Queue()
     midi = None
     try:
-        screen = open_display(config.width, config.height, config.fullscreen)
         pygame.display.set_caption(f"drumgame - {chart.title}")
-        if args.no_midi:
-            status = "Keyboard only (MIDI off)"
-        else:
-            midi = open_midi(config, args, hits)
-            if midi.port_name is not None:
-                status = f"MIDI: {midi.port_name}"
-            else:
-                status = "Keyboard only: no MIDI device found"
-                print(f"MIDI unavailable ({midi.error}); using the keyboard", file=sys.stderr)
+        midi, status, connected = _open_inputs(config, args, hits)
         keyboard = KeyboardInput(hits, keymap_from_names(config.keyboard))
-        connected = midi is not None and midi.port_name is not None
         stats = PlayScreen(screen, chart, config, hits, keyboard, status, connected).run()
         print(
             f"score {stats.score}  perfect {stats.perfect}  good {stats.good}  "
@@ -137,6 +156,61 @@ def play(config: Config, args, chart: Chart) -> int:
         if midi is not None:
             midi.close()
         pygame.quit()
+    return 0
+
+
+def calibrate(config: Config, args) -> int:
+    from drumgame import saved
+    from drumgame.game.screens.calibrate import CalibrateScreen
+    from drumgame.input.keyboard_in import KeyboardInput, keymap_from_names
+
+    pygame, screen = _start_pygame(config)
+    hits: queue.Queue = queue.Queue()
+    midi = None
+    try:
+        pygame.display.set_caption("drumgame - calibration")
+        midi, _, _ = _open_inputs(config, args, hits)
+        keyboard = KeyboardInput(hits, keymap_from_names(config.keyboard))
+        result = CalibrateScreen(screen, config, hits, keyboard).run()
+    finally:
+        if midi is not None:
+            midi.close()
+        pygame.quit()
+    if result is None:
+        print("calibration not saved")
+        return 0
+    path = saved.save({"audio": {"offset_ms": result.offset_ms}})
+    print(f"audio offset set to {result.offset_ms:+.1f} ms ({result.count} hits); saved to {path}")
+    return 0
+
+
+def learn(config: Config, args) -> int:
+    from drumgame import saved
+    from drumgame.game.screens.learn import LearnScreen
+
+    notes: queue.Queue = queue.Queue()
+
+    def listener(note, velocity, channel, lane, status):
+        if status != "filtered":  # respect the configured channel, ignore the old map
+            notes.put((note, velocity))
+
+    midi = open_midi(config, args, queue.Queue(), listener)
+    if midi.port_name is None:
+        print(f"learn mode needs the kit: could not open a MIDI input ({midi.error})",
+              file=sys.stderr)  # fmt: skip
+        return 1
+    pygame, screen = _start_pygame(config)
+    try:
+        pygame.display.set_caption("drumgame - learn mode")
+        result = LearnScreen(screen, config, notes, f"MIDI: {midi.port_name}").run()
+    finally:
+        midi.close()
+        pygame.quit()
+    if not result:
+        print("note map not saved")
+        return 0
+    path = saved.save({"midi_map": {str(note): lane for note, lane in sorted(result.items())}})
+    print(f"learned {len(result)} notes; saved to {path}")
     return 0
 
 
@@ -150,6 +224,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"MIDI backend unavailable: {exc}", file=sys.stderr)
             return 1
         print("\n".join(names) if names else "no MIDI input ports found")
+        return 0
+
+    if args.reset_saved:
+        from drumgame import saved
+
+        removed = saved.reset()
+        print("saved note map and calibration removed" if removed else "nothing was saved")
         return 0
 
     overrides: dict = {}
@@ -171,6 +252,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.monitor:
         return monitor(config, args)
+    if args.learn:
+        return learn(config, args)
+    if args.calibrate:
+        return calibrate(config, args)
 
     try:
         chart = load_chart(args.chart)

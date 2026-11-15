@@ -36,7 +36,7 @@ class MidiInput:
         self._note_map = note_map
         self._debouncer = debouncer or Debouncer()
         self._channel = channel
-        self._listener = listener
+        self.listener = listener
         self._time_fn = time_fn
         self._port = None
         self.port_name: str | None = None
@@ -90,8 +90,8 @@ class MidiInput:
             else:
                 status = "hit"
                 self._queue.put(HitEvent(t, lane, msg.velocity, "midi"))
-        if self._listener is not None:
-            self._listener(msg.note, msg.velocity, msg.channel, lane, status)
+        if self.listener is not None:
+            self.listener(msg.note, msg.velocity, msg.channel, lane, status)
 
 
 def _choose_port(names: list[str], hint: str) -> str:

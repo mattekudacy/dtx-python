@@ -12,6 +12,7 @@ from typing import Any
 from drumgame.game.judge import HitWindows
 from drumgame.input.mapping import parse_note_map
 from drumgame.lanes import LANES, LAYOUTS, Layout
+from drumgame.saved import load_saved
 
 
 # The UI scales to the window, but below this the text is too small to read.
@@ -107,13 +108,21 @@ def default_dict() -> dict[str, Any]:
 
 
 def load_config(path: str | Path | None = None, overrides: dict[str, Any] | None = None) -> Config:
-    """Defaults, then the user file (`path`, or the XDG location if it exists),
-    then `overrides` (from the command line)."""
+    """Layers, later ones winning: bundled defaults, the user file (`path`, or
+    the XDG location if it exists), what the game saved itself (learned note
+    map, calibration), then `overrides` from the command line."""
     data = default_dict()
     if path is not None:
         data = _merge(data, tomllib.loads(Path(path).read_text("utf-8")))
     elif user_config_path().is_file():
         data = _merge(data, tomllib.loads(user_config_path().read_text("utf-8")))
+    saved = load_saved()
+    if isinstance(saved.get("midi_map"), dict):
+        # A learned map describes the whole kit: it replaces the map rather
+        # than being laid over the unverified default one.
+        data["midi_map"] = saved["midi_map"]
+    if isinstance(saved.get("audio"), dict) and "offset_ms" in saved["audio"]:
+        data["audio"]["offset_ms"] = saved["audio"]["offset_ms"]
     if overrides:
         data = _merge(data, overrides)
     return Config.from_dict(data)
